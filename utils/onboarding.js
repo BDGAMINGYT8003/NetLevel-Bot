@@ -27,7 +27,7 @@ async function checkAndOnboardUser(interaction) {
         .addActionRowComponents(row => row.addComponents(new ButtonBuilder().setCustomId('tutorial_next_1').setLabel('Next').setStyle(ButtonStyle.Primary)));
 
     await interaction.editReply({
-        content: '',
+        content: null, // Per d.js v14 docs, content must be null when upgrading to CV2
         components: [step1],
         flags: MessageFlags.IsComponentsV2
     });
