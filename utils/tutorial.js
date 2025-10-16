@@ -30,7 +30,6 @@ const tutorialSteps = [
 ];
 
 async function startTutorial(interaction) {
-    await interaction.deferUpdate(); // Acknowledge the button click from the prompt
     let currentStep = 0;
 
     const generateTutorialMessage = (stepIndex) => {
@@ -56,41 +55,40 @@ async function startTutorial(interaction) {
         };
     };
 
-    await interaction.editReply(generateTutorialMessage(currentStep));
+    // The initial interaction is the "Begin Briefing" button click.
+    // We edit the original ephemeral prompt message to show the first step.
+    await interaction.update(generateTutorialMessage(currentStep));
 
     const filter = (i) => i.customId.startsWith('tutorial_next_') && i.user.id === interaction.user.id;
     const collector = interaction.channel.createMessageComponentCollector({ filter, time: 300000 }); // 5 minute timeout
 
     collector.on('collect', async i => {
-        await i.deferUpdate();
-        currentStep++;
+        try {
+            currentStep++;
 
-        if (currentStep < tutorialSteps.length) {
-            await i.editReply(generateTutorialMessage(currentStep));
-        }
+            if (currentStep >= tutorialSteps.length) {
+                collector.stop();
+                updateUserProfile(interaction.guild.id, interaction.user.id, { onboarded: true });
 
-        if (currentStep >= tutorialSteps.length) {
-            // This is the final click on "Begin"
+                const finalMessage = new ContainerBuilder()
+                    .setAccentColor(0x57F287) // Green for success
+                    .addTextDisplayComponents(
+                        new TextDisplayBuilder().setContent("**Onboarding Complete**"),
+                        new TextDisplayBuilder().setContent("You now have full access to the Apex Grid. Please run the command you originally intended to use again.")
+                    );
+                await i.update({ components: [finalMessage], flags: [MessageFlags.IsComponentsV2] });
+            } else {
+                 await i.update(generateTutorialMessage(currentStep));
+            }
+        } catch (error) {
+            console.error("Error updating tutorial interaction:", error);
             collector.stop();
-            // The profile is now created *before* the tutorial starts.
-            // Here, we just mark it as complete.
-            updateUserProfile(interaction.guild.id, interaction.user.id, { onboarded: true });
-
-            const finalMessage = new ContainerBuilder()
-                .setAccentColor(0x57F287) // Green for success
-                .addTextDisplayComponents(
-                    new TextDisplayBuilder().setContent("**Onboarding Complete**"),
-                    new TextDisplayBuilder().setContent("You now have full access to the Apex Grid. Please run the command you originally intended to use again.")
-                );
-            await i.editReply({ components: [finalMessage], flags: [MessageFlags.IsComponentsV2] });
-        } else {
-             await i.editReply(generateTutorialMessage(currentStep));
         }
     });
 
-    collector.on('end', collected => {
-        if (collected.size === 0) {
-            interaction.editReply({ content: 'Tutorial timed out.', components: [] });
+    collector.on('end', (collected, reason) => {
+        if (reason === 'time') {
+            interaction.editReply({ content: 'Tutorial timed out.', components: [] }).catch(() => {});
         }
     });
 }
