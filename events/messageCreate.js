@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const { getUserProfile, updateUserProfile } = require('../utils/database');
+const { processLevelUp } = require('../utils/levelUp');
 const chalk = require('chalk');
 
 // Simple in-memory rate limiting
@@ -28,9 +29,10 @@ module.exports = {
         }
 
         let xpGained = 0;
-        // Base XP for message length
+        // Base XP for message length (guaranteed 1-5 XP for messages > 5 chars)
         if (message.content.length > 5) {
-            xpGained += Math.min(5, Math.floor(message.content.length / 10)); // 1-5 XP based on length
+            const base_xp = Math.floor(message.content.length / 10);
+            xpGained += Math.max(1, Math.min(5, base_xp));
         }
 
         // Bonus for official server emojis/stickers
@@ -44,41 +46,7 @@ module.exports = {
         if (xpGained === 0) return;
 
         // --- Update Profile & Check for Level Up ---
-const { getLevelForXp } = require('../utils/xpUtils');
-
-// ... (inside execute function)
-
-        const newTotalXp = userProfile.xp + xpGained;
-        const oldLevel = userProfile.level;
-        const newLevel = getLevelForXp(newTotalXp);
-
-        let newCiTokens = userProfile.ci_tokens;
-        let dailyCiEarned = userProfile.daily_ci_earned || 0;
-
-        if (newLevel > oldLevel) {
-            // User leveled up, possibly multiple times
-            let ciGainedThisLevelUp = 0;
-            for (let levelReached = oldLevel + 1; levelReached <= newLevel; levelReached++) {
-                const ciForLevel = 1 + (0.5 * (levelReached - 1));
-                ciGainedThisLevelUp += ciForLevel;
-            }
-
-            const remainingCiCap = 70 - dailyCiEarned;
-            const ciGranted = Math.min(ciGainedThisLevelUp, remainingCiCap);
-
-            if (ciGranted > 0) {
-                newCiTokens += ciGranted;
-                dailyCiEarned += ciGranted;
-            }
-
-            console.log(chalk.cyan(`${author.tag} has leveled up from ${oldLevel} to ${newLevel} in guild ${guild.name}! Granted ${ciGranted} CI Tokens.`));
-        }
-
-        updateUserProfile(guild.id, author.id, {
-            xp: newTotalXp,
-            level: newLevel,
-            ci_tokens: newCiTokens,
-            daily_ci_earned: dailyCiEarned,
-        });
+        const updatedStats = processLevelUp(userProfile, xpGained);
+        updateUserProfile(guild.id, author.id, updatedStats);
     },
 };

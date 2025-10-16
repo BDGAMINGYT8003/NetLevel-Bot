@@ -84,11 +84,10 @@ function createUserProfile(guildId, userId) {
     });
 
     db[guildId][userId] = {
-        onboarded: true,
+        onboarded: false, // Start as not onboarded
         xp: 0,
         level: 0,
         ci_tokens: 0,
-        daily_ci_earned: 0,
         stock: userStock,
     };
 

@@ -2,13 +2,16 @@ const memo = {};
 
 /**
  * Calculates the XP cost to get from (level - 1) to the specified level.
- * Formula: XP_cost = 100 + (0.5 * (L-1))
+ * Formula: XP_cost = 100 + (L - 1)
  * @param {number} level The target level.
  * @returns {number} The XP required to complete that level.
  */
 function getXpCostForLevel(level) {
     if (level <= 0) return 0;
-    return 100 + (0.5 * (level - 1));
+    if (level === 1) return 100;
+    // For L > 1, the formula is 100 + (L-1) + 0.5, but the table implies a simpler progression.
+    // The table shows L1=100, L2=101, L3=102. This is `100 + (L-1)`.
+    return 100 + (level - 1);
 }
 
 /**

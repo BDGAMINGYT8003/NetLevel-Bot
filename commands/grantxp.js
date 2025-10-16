@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ContainerBuilder, TextDisplayBuilder, MessageFlags } = require('discord.js');
 const { getUserProfile, updateUserProfile } = require('../utils/database');
-const { getLevelForXp } = require('../utils/xpUtils');
+const { processLevelUp } = require('../utils/levelUp');
 const chalk = require('chalk');
 
 module.exports = {
@@ -29,26 +29,8 @@ module.exports = {
             return interaction.reply({ components: [notRegisteredContainer], ephemeral: true, flags: [MessageFlags.IsComponentsV2] });
         }
 
-        const oldLevel = userProfile.level;
-        const newTotalXp = userProfile.xp + amount;
-        const newLevel = getLevelForXp(newTotalXp);
-
-        let ciGained = 0;
-        if (newLevel > oldLevel) {
-            // Calculate CI tokens for the levels gained
-            for (let levelReached = oldLevel + 1; levelReached <= newLevel; levelReached++) {
-                ciGained += (1 + (0.5 * (levelReached - 1)));
-            }
-        }
-        // Note: The daily cap is intentionally ignored for admin grants as per typical bot design for event prizes.
-
-        const newCiTotal = userProfile.ci_tokens + ciGained;
-
-        updateUserProfile(interaction.guild.id, targetUser.id, {
-            xp: newTotalXp,
-            level: newLevel,
-            ci_tokens: newCiTotal,
-        });
+        const updatedStats = processLevelUp(userProfile, amount);
+        updateUserProfile(interaction.guild.id, targetUser.id, updatedStats);
 
         console.log(chalk.magenta(`[ADMIN] ${interaction.user.tag} granted ${amount} XP to ${targetUser.tag}.`));
 
@@ -57,7 +39,7 @@ module.exports = {
             .addTextDisplayComponents(
                 new TextDisplayBuilder().setContent(`**Success!**`),
                 new TextDisplayBuilder().setContent(`Granted **${amount} XP** to ${targetUser.username}.`),
-                new TextDisplayBuilder().setContent(`They are now Level **${newLevel}** with a total of **${newCiTotal} CI Tokens**.`)
+                new TextDisplayBuilder().setContent(`They are now Level **${updatedStats.level}** with a total of **${updatedStats.ci_tokens.toFixed(2)} CI Tokens**.`)
             );
 
         await interaction.reply({ components: [successContainer], ephemeral: true, flags: [MessageFlags.IsComponentsV2] });

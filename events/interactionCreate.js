@@ -1,22 +1,52 @@
 const { Events } = require('discord.js');
 const chalk = require('chalk');
-const { getUserProfile } = require('../utils/database');
-const { startTutorial } = require('../utils/tutorial'); // This will be created later
+const { getUserProfile, createUserProfile } = require('../utils/database');
+const { startTutorial } = require('../utils/tutorial');
 
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
         const { client, user, guild } = interaction;
 
-        // --- User Onboarding Check ---
-        const userProfile = getUserProfile(guild.id, user.id);
+const { ContainerBuilder, TextDisplayBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, MessageFlags } = require('discord.js');
+// ...
+    async execute(interaction) {
+        const { client, user, guild } = interaction;
 
-        if (!userProfile || !userProfile.onboarded) {
-            // User is new or hasn't completed the tutorial.
-            // We'll start the tutorial instead of executing the command.
-            // The tutorial function itself will handle the interaction response.
-            console.log(chalk.yellow(`New user detected (${user.tag}). Starting tutorial...`));
+        // --- User Onboarding Check ---
+        let userProfile = getUserProfile(guild.id, user.id);
+
+        // If the interaction is the tutorial start button, let it pass to the tutorial handler
+        if (interaction.isButton() && interaction.customId === 'start_tutorial') {
             await startTutorial(interaction);
+            return;
+        }
+
+        if (!userProfile) {
+            // First interaction ever, create a profile stub
+            userProfile = createUserProfile(guild.id, user.id);
+            console.log(chalk.blue(`Created profile stub for new user ${user.tag}.`));
+        }
+
+        if (!userProfile.onboarded) {
+            // User hasn't completed the tutorial. Prompt them to start.
+            console.log(chalk.yellow(`User ${user.tag} has not been onboarded. Prompting to start tutorial.`));
+
+            const promptContainer = new ContainerBuilder()
+                .setAccentColor(0xFFCC00)
+                .addTextDisplayComponents(
+                    new TextDisplayBuilder().setContent("**Access Denied: Onboarding Required**"),
+                    new TextDisplayBuilder().setContent("To access the Apex Grid and its commands, you must first complete a one-time interactive briefing.")
+                );
+
+            const promptRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('start_tutorial')
+                    .setLabel('Begin Briefing')
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+            await interaction.reply({ components: [promptContainer, promptRow], ephemeral: true, flags: [MessageFlags.IsComponentsV2] });
             return;
         }
 

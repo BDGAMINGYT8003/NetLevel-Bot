@@ -46,11 +46,8 @@ async function execute(interaction) {
 
 // --- Component Interaction Handler ---
 async function handleInteraction(interaction) {
-    const userProfile = getUserProfile(interaction.guild.id, interaction.user.id);
-    const [_, action, itemId, quantityStr] = interaction.customId.split('_');
-
     // 1. Select Menu Interaction -> Show Modal
-    if (action === 'select' && interaction.isStringSelectMenu()) {
+    if (interaction.isStringSelectMenu()) {
         const selectedItemId = interaction.values[0];
         const item = items.find(i => i.id === selectedItemId);
 
@@ -67,81 +64,76 @@ async function handleInteraction(interaction) {
                         .setPlaceholder('Enter a number')
                 )
             );
-        await interaction.showModal(modal);
+        return await interaction.showModal(modal);
     }
 
     // 2. Modal Submission -> Show Confirmation Buttons
-    if (action === 'modal' && interaction.isModalSubmit()) {
+    if (interaction.isModalSubmit()) {
+        const userProfile = getUserProfile(interaction.guild.id, interaction.user.id);
+        const [_, itemId] = interaction.customId.split('_');
+
         await interaction.deferReply({ ephemeral: true });
         const quantity = parseInt(interaction.fields.getTextInputValue('quantity'));
         const item = items.find(i => i.id === itemId);
-        const { stock, ci_tokens } = userProfile;
 
         // Validation
         if (isNaN(quantity) || quantity <= 0) {
             return interaction.editReply({ content: 'Please enter a valid positive number.' });
         }
-        if (ci_tokens < item.cost * quantity) {
-            return interaction.editReply({ content: `You do not have enough CI Tokens for this purchase. (Required: ${item.cost * quantity})` });
+        if (userProfile.ci_tokens < item.cost * quantity) {
+            return interaction.editReply({ content: `You do not have enough CI Tokens. Required: ${item.cost * quantity}. You have: ${userProfile.ci_tokens}.` });
         }
-        if (stock[itemId] !== 'Unlimited' && quantity > stock[itemId]) {
-            return interaction.editReply({ content: `You cannot purchase that many. You only have ${stock[itemId]} left in your monthly stock.` });
+        if (userProfile.stock[itemId] !== 'Unlimited' && quantity > userProfile.stock[itemId]) {
+            return interaction.editReply({ content: `You cannot purchase that many. You only have ${userProfile.stock[itemId]} left in your monthly stock.` });
         }
 
-        // Pass quantity in the customId
         const confirmButton = new ButtonBuilder().setCustomId(`market_confirm_${itemId}_${quantity}`).setLabel('Confirm').setStyle(ButtonStyle.Success);
-        const cancelButton = new ButtonBuilder().setCustomId(`market_cancel_${itemId}_${quantity}`).setLabel('Cancel').setStyle(ButtonStyle.Danger);
+        const cancelButton = new ButtonBuilder().setCustomId(`market_cancel`).setLabel('Cancel').setStyle(ButtonStyle.Danger);
         const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
 
-        await interaction.editReply({
+        return await interaction.editReply({
             content: `Are you sure you want to purchase **${quantity}x ${item.name}** for a total of **${item.cost * quantity} CI Tokens**?`,
             components: [row]
         });
     }
 
-    // 3. Button Click -> Finalize Purchase
-    if ((action === 'confirm' || action === 'cancel') && interaction.isButton()) {
-        await interaction.deferUpdate();
+    // 3. Button Click -> Finalize Purchase or Cancel
+    if (interaction.isButton()) {
+        const [_, action, itemId, quantityStr] = interaction.customId.split('_');
+
         if (action === 'cancel') {
-            return interaction.editReply({ content: 'Purchase cancelled.', components: [] });
+            return await interaction.update({ content: 'Purchase cancelled.', components: [] });
         }
 
-        const quantity = parseInt(quantityStr);
-        const item = items.find(i => i.id === itemId);
+        if (action === 'confirm') {
+            await interaction.deferUpdate();
 
-        // Retrieve data again to ensure it's fresh and perform final validation
-        const freshProfile = getUserProfile(interaction.guild.id, interaction.user.id);
-        if (freshProfile.ci_tokens < item.cost * quantity) {
-            return interaction.editReply({ content: 'Your balance has changed since you started this purchase. Please try again.', components: [] });
+            const quantity = parseInt(quantityStr);
+            const item = items.find(i => i.id === itemId);
+            const freshProfile = getUserProfile(interaction.guild.id, interaction.user.id);
+
+            // Final validation
+            if (freshProfile.ci_tokens < item.cost * quantity || (freshProfile.stock[itemId] !== 'Unlimited' && quantity > freshProfile.stock[itemId])) {
+                return interaction.editReply({ content: 'Your balance or stock has changed since starting this purchase. Please try again.', components: [] });
+            }
+
+            // Process transaction
+            const newCiTokens = freshProfile.ci_tokens - (item.cost * quantity);
+            const newStock = { ...freshProfile.stock };
+            if (newStock[itemId] !== 'Unlimited') {
+                newStock[itemId] -= quantity;
+            }
+            updateUserProfile(interaction.guild.id, interaction.user.id, { ci_tokens: newCiTokens, stock: newStock });
+
+            const rewardCode = `APEXG-${uuidv4().toUpperCase()}`;
+            try {
+                await interaction.user.send(`Thank you for your purchase! Your reward code for **${quantity}x ${item.name}** is: \`\`\`${rewardCode}\`\`\``);
+            } catch (error) {
+                console.warn(chalk.yellow(`Could not DM user ${interaction.user.tag}.`));
+            }
+
+            return await interaction.editReply({ content: `Purchase successful! Your reward code is below. **Copy it now, it will disappear!**\n\`\`\`${rewardCode}\`\`\``, components: [] });
         }
-        if (freshProfile.stock[itemId] !== 'Unlimited' && quantity > freshProfile.stock[itemId]) {
-            return interaction.editReply({ content: `Your stock for this item has changed. You only have ${freshProfile.stock[itemId]} left. Please try again.`, components: [] });
-        }
-
-
-        // Process transaction
-        const newCiTokens = freshProfile.ci_tokens - (item.cost * quantity);
-        const newStock = { ...freshProfile.stock };
-        if (newStock[itemId] !== 'Unlimited') {
-            newStock[itemId] -= quantity;
-        }
-
-        updateUserProfile(interaction.guild.id, interaction.user.id, {
-            ci_tokens: newCiTokens,
-            stock: newStock
-        });
-
-        const rewardCode = `APEXG-${uuidv4().toUpperCase()}`;
-
-        // Send DM
-        try {
-            await interaction.user.send(`Thank you for your purchase! Here is your reward code for **${quantity}x ${item.name}**: \n\`\`\`${rewardCode}\`\`\`\nThis code was also sent in the channel and will disappear shortly.`);
-        } catch (error) {
-            console.warn(chalk.yellow(`Could not DM user ${interaction.user.tag}. They may have DMs disabled.`));
-        }
-
-        // Send ephemeral message in channel
-        await interaction.editReply({ content: `Purchase successful! Your reward code is below. **Copy it now, it will disappear!**\n\`\`\`${rewardCode}\`\`\``, components: [] });
     }
 }
 

@@ -91,13 +91,10 @@ const rest = new REST({ version: '10' }).setToken(token);
 
 
 const { performMonthlyReset } = require('./utils/monthlyReset');
-const { performDailyReset } = require('./utils/dailyReset');
 
 // --- Schedulers ---
 // Monthly Reset
 cron.schedule('0 0 1 * *', () => performMonthlyReset(client), { timezone: "UTC" });
-// Daily CI Cap Reset
-cron.schedule('0 0 * * *', () => performDailyReset(), { timezone: "UTC" });
 
 
 // --- Bot Login ---

@@ -68,7 +68,6 @@ async function performMonthlyReset(client) {
                 xp: 0,
                 level: 0,
                 ci_tokens: 0,
-                daily_ci_earned: 0, // Also reset daily counter
                 stock: { ...defaultStock },
             };
         }

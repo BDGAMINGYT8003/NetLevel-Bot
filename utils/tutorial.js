@@ -1,5 +1,5 @@
 const { ContainerBuilder, TextDisplayBuilder, ButtonBuilder, ButtonStyle, MessageFlags, ActionRowBuilder } = require('discord.js');
-const { createUserProfile } = require('./database');
+const { updateUserProfile } = require('./database');
 
 const tutorialSteps = [
     {
@@ -30,6 +30,7 @@ const tutorialSteps = [
 ];
 
 async function startTutorial(interaction) {
+    await interaction.deferUpdate(); // Acknowledge the button click from the prompt
     let currentStep = 0;
 
     const generateTutorialMessage = (stepIndex) => {
@@ -50,11 +51,12 @@ async function startTutorial(interaction) {
 
         return {
             components: [container, row],
-            flags: MessageFlags.Ephemeral,
+            flags: [MessageFlags.IsComponentsV2],
+            ephemeral: true,
         };
     };
 
-    await interaction.reply(generateTutorialMessage(currentStep));
+    await interaction.editReply(generateTutorialMessage(currentStep));
 
     const filter = (i) => i.customId.startsWith('tutorial_next_') && i.user.id === interaction.user.id;
     const collector = interaction.channel.createMessageComponentCollector({ filter, time: 300000 }); // 5 minute timeout
@@ -69,8 +71,10 @@ async function startTutorial(interaction) {
 
         if (currentStep >= tutorialSteps.length) {
             // This is the final click on "Begin"
-            createUserProfile(interaction.guild.id, interaction.user.id);
             collector.stop();
+            // The profile is now created *before* the tutorial starts.
+            // Here, we just mark it as complete.
+            updateUserProfile(interaction.guild.id, interaction.user.id, { onboarded: true });
 
             const finalMessage = new ContainerBuilder()
                 .setAccentColor(0x57F287) // Green for success
