@@ -1,9 +1,11 @@
-const { SlashCommandBuilder, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize } = require('discord.js');
+const { SlashCommandBuilder, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require('discord.js');
 const { getUserProfile } = require('../utils/database');
+const { getCumulativeXpForLevel } = require('../utils/xpUtils');
 
 // Helper function to create a text-based progress bar
 function createProgressBar(current, max, length = 20) {
-    const percentage = current / max;
+    if (max === 0) return `[${' '.repeat(length)}]`; // Avoid division by zero
+    const percentage = Math.max(0, Math.min(1, current / max));
     const progress = Math.round(length * percentage);
     const empty = length - progress;
 
@@ -32,13 +34,19 @@ module.exports = {
                 .setAccentColor(0xFF0000) // Red for error
                 .addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
 
-            return interaction.reply({ components: [notRegisteredContainer], ephemeral: true });
+            return interaction.reply({ components: [notRegisteredContainer], ephemeral: true, flags: [MessageFlags.IsComponentsV2] });
         }
 
         const { level, xp, ci_tokens } = userProfile;
-        const xpForNextLevel = 100 + (0.5 * level);
-        const progressPercentage = Math.floor((xp / xpForNextLevel) * 100);
-        const progressBar = createProgressBar(xp, xpForNextLevel);
+
+        const xpForCurrentLevel = getCumulativeXpForLevel(level);
+        const xpForNextLevel = getCumulativeXpForLevel(level + 1);
+
+        const xpInCurrentLevel = xp - xpForCurrentLevel;
+        const xpNeededForLevelUp = xpForNextLevel - xpForCurrentLevel;
+
+        const progressPercentage = Math.floor((xpInCurrentLevel / xpNeededForLevelUp) * 100);
+        const progressBar = createProgressBar(xpInCurrentLevel, xpNeededForLevelUp);
 
         const profileCard = new ContainerBuilder()
             .setAccentColor(0x0099FF)
@@ -49,8 +57,8 @@ module.exports = {
             )
             .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
             .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(`**XP Progress:** ${xp.toFixed(2)} / ${xpForNextLevel.toFixed(2)} (${progressPercentage}%)`),
-                new TextDisplayBuilder().setContent(progressBar)
+                new TextDisplayBuilder().setContent(`**XP Progress:** ${xp.toFixed(2)} / ${xpForNextLevel.toFixed(2)} Total XP`),
+                new TextDisplayBuilder().setContent(`${progressBar} (${progressPercentage}%)`)
             );
 
         await interaction.reply({ components: [profileCard], flags: [MessageFlags.IsComponentsV2] });

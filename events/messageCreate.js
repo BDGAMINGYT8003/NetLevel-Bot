@@ -44,34 +44,38 @@ module.exports = {
         if (xpGained === 0) return;
 
         // --- Update Profile & Check for Level Up ---
-        const newXp = userProfile.xp + xpGained;
-        const xpNeededForNextLevel = 100 + (0.5 * userProfile.level);
+const { getLevelForXp } = require('../utils/xpUtils');
 
-        let newLevel = userProfile.level;
+// ... (inside execute function)
+
+        const newTotalXp = userProfile.xp + xpGained;
+        const oldLevel = userProfile.level;
+        const newLevel = getLevelForXp(newTotalXp);
+
         let newCiTokens = userProfile.ci_tokens;
-        let leveledUp = false;
-
         let dailyCiEarned = userProfile.daily_ci_earned || 0;
 
-        if (newXp >= xpNeededForNextLevel) {
-            newLevel++;
-            leveledUp = true;
+        if (newLevel > oldLevel) {
+            // User leveled up, possibly multiple times
+            let ciGainedThisLevelUp = 0;
+            for (let levelReached = oldLevel + 1; levelReached <= newLevel; levelReached++) {
+                const ciForLevel = 1 + (0.5 * (levelReached - 1));
+                ciGainedThisLevelUp += ciForLevel;
+            }
 
-            const ciForLevelUp = 1 + (0.5 * (newLevel - 1));
             const remainingCiCap = 70 - dailyCiEarned;
-
-            const ciGranted = Math.min(ciForLevelUp, remainingCiCap);
+            const ciGranted = Math.min(ciGainedThisLevelUp, remainingCiCap);
 
             if (ciGranted > 0) {
                 newCiTokens += ciGranted;
                 dailyCiEarned += ciGranted;
             }
 
-            console.log(chalk.cyan(`${author.tag} has leveled up to Level ${newLevel} in guild ${guild.name}! Granted ${ciGranted} CI Tokens.`));
+            console.log(chalk.cyan(`${author.tag} has leveled up from ${oldLevel} to ${newLevel} in guild ${guild.name}! Granted ${ciGranted} CI Tokens.`));
         }
 
         updateUserProfile(guild.id, author.id, {
-            xp: newXp,
+            xp: newTotalXp,
             level: newLevel,
             ci_tokens: newCiTokens,
             daily_ci_earned: dailyCiEarned,
