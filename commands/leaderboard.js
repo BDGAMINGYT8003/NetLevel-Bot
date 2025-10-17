@@ -38,11 +38,14 @@ module.exports = {
             }
         }));
 
+        const userRank = sortedUsers.findIndex(([userId]) => userId === interaction.user.id) + 1;
+        const userRankText = userRank > 0 ? `\n\nYour Rank: **#${userRank}**` : "\n\nYou are not yet ranked.";
+
         const leaderboardContainer = new ContainerBuilder()
             .setAccentColor(0xFFD700) // Gold for leaderboard
             .addTextDisplayComponents(
                 new TextDisplayBuilder().setContent(`**🏆 Monthly XP Leaderboard - Top ${sortedUsers.length} 🏆**`),
-                new TextDisplayBuilder().setContent(leaderboardText.join('\n') || "No users to display.")
+                new TextDisplayBuilder().setContent((leaderboardText.join('\n') || "No users to display.") + userRankText)
             );
 
         await interaction.reply({ components: [leaderboardContainer], flags: [MessageFlags.IsComponentsV2] });

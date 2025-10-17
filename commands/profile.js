@@ -1,17 +1,7 @@
-const { SlashCommandBuilder, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require('discord.js');
-const { getUserProfile } = require('../utils/database');
+const { SlashCommandBuilder, ContainerBuilder, TextDisplayBuilder, MessageFlags, AttachmentBuilder, FileBuilder } = require('discord.js');
+const { getUserProfile, readUserDb } = require('../utils/database');
 const { getCumulativeXpForLevel } = require('../utils/xpUtils');
-
-// Helper function to create a text-based progress bar
-function createProgressBar(current, max, length = 20) {
-    if (max === 0) return `[${' '.repeat(length)}]`; // Avoid division by zero
-    const percentage = Math.max(0, Math.min(1, current / max));
-    const progress = Math.round(length * percentage);
-    const empty = length - progress;
-
-    const progressBar = '█'.repeat(progress) + ' '.repeat(empty);
-    return `[${progressBar}]`;
-}
+const { generateRankCard } = require('../utils/rankCardGenerator');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -22,6 +12,7 @@ module.exports = {
                 .setDescription('The user whose profile you want to see.')
                 .setRequired(false)),
     async execute(interaction) {
+        await interaction.deferReply();
         const targetUser = interaction.options.getUser('user') || interaction.user;
         const userProfile = getUserProfile(interaction.guild.id, targetUser.id);
 
@@ -34,33 +25,37 @@ module.exports = {
                 .setAccentColor(0xFF0000) // Red for error
                 .addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
 
-            return interaction.reply({ components: [notRegisteredContainer], ephemeral: true, flags: [MessageFlags.IsComponentsV2] });
+            return interaction.editReply({ components: [notRegisteredContainer], flags: [MessageFlags.IsComponentsV2] });
         }
 
-        const { level, xp, ci_tokens } = userProfile;
+        // Get rank
+        const allUsers = readUserDb()[interaction.guild.id];
+        const sortedUsers = Object.entries(allUsers).sort(([, a], [, b]) => b.xp - a.xp);
+        const rank = sortedUsers.findIndex(([id]) => id === targetUser.id) + 1;
 
+        const { level, xp } = userProfile;
         const xpForCurrentLevel = getCumulativeXpForLevel(level);
         const xpForNextLevel = getCumulativeXpForLevel(level + 1);
 
-        const xpInCurrentLevel = xp - xpForCurrentLevel;
-        const xpNeededForLevelUp = xpForNextLevel - xpForCurrentLevel;
+        const imageBuffer = await generateRankCard({
+            username: targetUser.username,
+            discriminator: targetUser.discriminator,
+            level: level,
+            rank: rank,
+            currentXp: xp - xpForCurrentLevel,
+            requiredXp: xpForNextLevel - xpForCurrentLevel,
+            avatarUrl: targetUser.displayAvatarURL({ extension: 'png', size: 256 }),
+            status: 'online' // In a real bot, you'd get this from presence
+        });
 
-        const progressPercentage = Math.floor((xpInCurrentLevel / xpNeededForLevelUp) * 100);
-        const progressBar = createProgressBar(xpInCurrentLevel, xpNeededForLevelUp);
+        const attachment = new AttachmentBuilder(imageBuffer, { name: 'rank-card.png' });
 
-        const profileCard = new ContainerBuilder()
-            .setAccentColor(0x0099FF)
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(`**Operative Profile: ${targetUser.username}**`),
-                new TextDisplayBuilder().setContent(`**Level:** ${level}`),
-                new TextDisplayBuilder().setContent(`**CI Tokens:** ${ci_tokens} 🪙`)
-            )
-            .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
-            .addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(`**XP Progress:** ${xp.toFixed(2)} / ${xpForNextLevel.toFixed(2)} Total XP`),
-                new TextDisplayBuilder().setContent(`${progressBar} (${progressPercentage}%)`)
-            );
+        const fileComponent = new FileBuilder()
+            .setURL('attachment://rank-card.png');
 
-        await interaction.reply({ components: [profileCard], flags: [MessageFlags.IsComponentsV2] });
+        const container = new ContainerBuilder()
+            .addFileComponents(fileComponent);
+
+        await interaction.editReply({ files: [attachment], components: [container], flags: [MessageFlags.IsComponentsV2] });
     },
 };
